@@ -1,17 +1,29 @@
 import {ArrayState} from "../state"
-import {Accessor} from "./Accessor"
+import {FilterBasedAccessor} from "./FilterBasedAccessor"
 import {
-  Term, Terms, Aggs, Cardinality,
-  BoolShould, BoolMust
-} from "../query/QueryBuilders";
-import * as _ from "lodash";
+  TermQuery, TermsBucket, CardinalityMetric,
+  BoolShould, BoolMust, SelectedFilter,
+  FilterBucket
+} from "../query";
+const assign = require("lodash/assign")
+const map = require("lodash/map")
+const omitBy = require("lodash/omitBy")
+const isUndefined = require("lodash/isUndefined")
 
 
 export interface FacetAccessorOptions {
-  operator?:string,
+  operator?:string
   title?:string
   id?:string
   size:number
+  facetsPerPage?:number
+  translations?:Object
+  include?:Array<string> | string
+  exclude?:Array<string> | string
+  orderKey?:string
+  orderDirection?:string
+  min_doc_count?:number
+  loadAggregations?: boolean
 }
 
 export interface ISizeOption {
@@ -19,23 +31,40 @@ export interface ISizeOption {
   size:number
 }
 
-export class FacetAccessor extends Accessor<ArrayState> {
+export class FacetAccessor extends FilterBasedAccessor<ArrayState> {
 
   state = new ArrayState()
   options:any
   defaultSize:number
   size:number
+  uuid:string
+  loadAggregations: boolean
+
+  static translations:any = {
+    "facets.view_more":"View more",
+    "facets.view_less":"View less",
+    "facets.view_all":"View all"
+  }
+  translations = FacetAccessor.translations
+
   constructor(key, options:FacetAccessorOptions){
     super(key, options.id)
     this.options = options
     this.defaultSize = options.size
+    this.options.facetsPerPage = this.options.facetsPerPage || 50
     this.size = this.defaultSize;
+    this.loadAggregations = isUndefined(this.options.loadAggregations) ? true : this.options.loadAggregations
+    if(options.translations){
+      this.translations = assign({}, this.translations, options.translations)
+    }
   }
 
   getBuckets(){
-    const results = this.getResults()
-    const path = ['aggregations',this.key, this.key,'buckets']
-    return _.get(results, path, [])
+    return this.getAggregations([this.uuid, this.key, "buckets"], [])
+  }
+  
+  getDocCount(){
+    return this.getAggregations([this.uuid, "doc_count"], 0)
   }
 
   setViewMoreOption(option:ISizeOption) {
@@ -45,15 +74,15 @@ export class FacetAccessor extends Accessor<ArrayState> {
   getMoreSizeOption():ISizeOption {
     var option = {size:0, label:""}
     var total = this.getCount()
-
+    var facetsPerPage = this.options.facetsPerPage
     if (total <= this.defaultSize) return null;
 
     if (total <= this.size) {
-      option = {size:this.defaultSize, label:this.translate("view less")}
-    } else if ((this.size + 50) > total) {
-      option = {size:total, label:this.translate("view all")}
-    } else if ((this.size + 50) < total) {
-      option = {size:this.size + 50, label:this.translate("view more")}
+      option = {size:this.defaultSize, label:this.translate("facets.view_less")}
+    } else if ((this.size + facetsPerPage) > total) {
+      option = {size:total, label:this.translate("facets.view_all")}
+    } else if ((this.size + facetsPerPage) < total) {
+      option = {size:this.size + facetsPerPage, label:this.translate("facets.view_more")}
     } else if (total ){
       option = null
     }
@@ -62,10 +91,7 @@ export class FacetAccessor extends Accessor<ArrayState> {
   }
 
   getCount():number {
-    let key = this.key+"_count";
-    const results = this.getResults()
-    const path = ['aggregations',key, key,'value']
-    return _.get(results, path, 0)
+    return this.getAggregations([this.uuid, this.key+"_count", "value"], 0) as number
   }
 
   isOrOperator(){
@@ -76,40 +102,52 @@ export class FacetAccessor extends Accessor<ArrayState> {
     return this.isOrOperator() ? BoolShould : BoolMust
   }
 
+  getOrder(){
+    if(this.options.orderKey){
+      let orderDirection = this.options.orderDirection || "asc"
+      return {[this.options.orderKey]:orderDirection}
+    }
+  }
+
   buildSharedQuery(query){
     var filters = this.state.getValue()
-    var filterTerms = _.map(filters, (filter)=> {
-      return Term(this.key, filter, {
-        $name:this.options.title || this.translate(this.key),
-        $value:this.translate(filter),
-        $id:this.options.id,
-        $disabled: false,
-        $remove:()=> {
-          this.state = this.state.remove(filter)
-        }
-      })
-    } );
+    var filterTerms = map(filters, TermQuery.bind(null, this.key))
+    var selectedFilters:Array<SelectedFilter> = map(filters, (filter)=> {
+      return {
+        name:this.options.title || this.translate(this.key),
+        value:this.translate(filter),
+        id:this.options.id,
+        remove:()=> this.state = this.state.remove(filter)
+      }
+    })
     var boolBuilder = this.getBoolBuilder()
     if(filterTerms.length > 0){
-      query = query.addFilter(this.key, boolBuilder(filterTerms))
+      query = query.addFilter(this.uuid, boolBuilder(filterTerms))
+        .addSelectedFilters(selectedFilters)
     }
+
     return query
   }
 
   buildOwnQuery(query){
-    var filters = this.state.getValue()
-    let excludedKey = (this.isOrOperator()) ? this.key : undefined
-    return query
-      .setAggs(Aggs(
-        this.key,
-        query.getFilters(excludedKey),
-        Terms(this.key, {size:this.size})
-      ))
-      .setAggs(Aggs(
-        this.key+"_count",
-        query.getFilters(excludedKey),
-        Cardinality(this.key)
-      ))
-
+    if (!this.loadAggregations){
+      return query
+    } else {
+      var filters = this.state.getValue()
+      let excludedKey = (this.isOrOperator()) ? this.uuid : undefined
+      return query
+        .setAggs(FilterBucket(
+          this.uuid,
+          query.getFiltersWithoutKeys(excludedKey),
+          TermsBucket(this.key, this.key, omitBy({
+            size:this.size,
+            order:this.getOrder(),
+            include: this.options.include,
+            exclude: this.options.exclude,
+            min_doc_count:this.options.min_doc_count
+          }, isUndefined)),
+          CardinalityMetric(this.key+"_count", this.key)
+        ))
+    }
   }
 }

@@ -9,7 +9,7 @@ import {
   SearchkitComponent
 } from "searchkit";
 
-class App extends SearchkitComponent<any, any> {
+class App extends SearchkitComponent {
 
   render(){
     <div>
@@ -18,34 +18,47 @@ class App extends SearchkitComponent<any, any> {
   }
 }
 ```
-## Demo
-[](codepen://searchkit/PZWZbP?height=400&theme=0)
 
-## Extending Component
+## Overriding
+If you want to customise the display of HitsStats, you can override the display by passing in a ReactComponent into `component` prop.
 
 ```jsx
-
 import {
   HitsStats,
   SearchkitComponent
 } from "searchkit";
 
-class ExampleHitStats extends HitsStats {
-  renderText() {
-    return (<div className="{this.bemBlocks.container("info")}">override text</div>)
-  }
+const customHitStats = (props) => {
+	const {resultsFoundLabel, bemBlocks, hitCount, timeTaken} = props
+	return (
+		<div className={bemBlocks.container()} data-qa="hits-stats">
+			<div className={bemBlocks.container("info")} data-qa="info">
+				I found {hitCount} in {timeTaken}ms!
+			</div>
+	  </div>
+	)
 }
 
-class App extends SearchkitComponent<any, any> {
+class App extends SearchkitComponent {
+
   render(){
     <div>
-        <ExampleHitStats/>
+        <HitsStats component={customHitStats}/>
     </div>
   }
 }
 ```
 
-You can override the default display for HitsStats by overriding the renderText method. You have access to the following methods to retrieve metadata on the search:
-- `getHitCount` returns the number of hits.
-- `getTime` returns the time taken for the query.
-- `getResults` returns the results object.
+## Props
+- `translations` *(Object)*: An object of translations you wish to override. For more information on translations see [translate](../../core/Translate.md) page.
+- `component` *(ReactComponent)*: A React component to override the default display component. Used when you want to change the markup of HitStats
+- `mod` *(string)*: Optional. A custom BEM container class.
+
+## Demo
+[](codepen://searchkit/PZWZbP?height=400&theme=0)
+
+## Props
+- `translations` *(Object)*: An object of translations you wish to override. For more information on translations see [translate](../../core/Translate.md) page.
+
+## Translations
+- `hitstats.results_found` - "{numberResults} results found in {timeTaken}"

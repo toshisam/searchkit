@@ -1,81 +1,133 @@
 import * as React from "react"
 import {SearchkitManager} from "../SearchkitManager";
+import {ImmutableQuery} from "../query"
 import {Accessor} from "../accessors/Accessor"
-import {Searcher} from "../Searcher"
+import {Utils} from "../support"
 var block = require('bem-cn');
+const keys = require("lodash/keys")
+const without = require("lodash/without")
+const transform = require("lodash/transform")
 
+export interface SearchkitComponentProps {
+  mod?:string
+  className?:string
+  translations?:Object
+  searchkit?:SearchkitManager
+  key?:string
+}
 
-export class SearchkitComponent<P,S> extends React.Component<P,S> {
+export class SearchkitComponent<P extends SearchkitComponentProps,S> extends React.Component<P,S> {
   searchkit:SearchkitManager
-  accessor:Accessor<any>
-  searcher:Searcher
+  accessor:Accessor
   stateListenerUnsubscribe:Function
-  bemBlocks:any
-  blockClass:string
+  translations:Object = {}
+  unmounted = false
 
-	static contextTypes = {
-		searchkit:React.PropTypes.instanceOf(SearchkitManager),
-    searcher:React.PropTypes.instanceOf(Searcher)
+  static contextTypes: React.ValidationMap<any> = {
+		searchkit:React.PropTypes.instanceOf(SearchkitManager)
 	}
+
+  static translationsPropType = (translations)=> {
+    return React.PropTypes.objectOf(React.PropTypes.string)
+  }
+
+  static propTypes:any = {
+    mod :React.PropTypes.string,
+    className :React.PropTypes.string,
+    translations: React.PropTypes.objectOf(
+      React.PropTypes.string),
+    searchkit:React.PropTypes.instanceOf(SearchkitManager)
+  }
+
+  constructor(props?){
+    super(props)
+    this.translate = this.translate.bind(this)
+  }
 
   defineBEMBlocks() {
     return null;
   }
 
-  defineAccessor():Accessor<any>{
+  defineAccessor():Accessor{
     return null
   }
 
-  shouldCreateNewSearcher(){
-    return false
+  translate(key, interpolations?){
+    let translation = (
+      (this.searchkit.translate(key)) ||
+      (this.props.translations && this.props.translations[key]) ||
+      this.translations[key] || key)
+    return Utils.translate(translation, interpolations)
   }
 
-  translate(key){
-    return this.searchkit.translate(key)
-  }
-
-  componentWillMount(){
-    this.searchkit = this.context["searchkit"]
-    this.accessor  = this.defineAccessor()
-    this.bemBlocks = _.transform(this.defineBEMBlocks(), (result:any, cssClass, name) => {
+  get bemBlocks(){
+    return transform(this.defineBEMBlocks(), (result:any, cssClass, name) => {
       result[name] = block(cssClass);
     })
-    // if(!this.shouldCreateNewSearcher() || !this.searchkit.multipleSearchers){
-    this.searcher = (
-      this.searcher || this.props["searcher"] ||
-      this.context["searcher"] || this.searchkit.primarySearcher
-    )
-
-    if(this.accessor){
-      // this.searcher.stateManager.registerAccessor(this.accessor)
-      if(this.shouldCreateNewSearcher() && this.searchkit.multipleSearchers){
-        this.searcher = this.searchkit.createSearcher()
+  }
+  _getSearchkit(){
+    return this.props.searchkit || this.context["searchkit"]
+  }
+  componentWillMount(){
+    this.searchkit = this._getSearchkit()
+    if(this.searchkit){
+      this.accessor  = this.defineAccessor()
+      if(this.accessor){
+        this.accessor = this.searchkit.addAccessor(this.accessor)
       }
-      this.searcher.addAccessor(this.accessor)
-    }
-    if(this.searcher){
-      this.stateListenerUnsubscribe = this.searcher.emitter.addListener(()=> {
-        this.forceUpdate()
+      this.stateListenerUnsubscribe = this.searchkit.emitter.addListener(()=> {
+        !this.unmounted && this.forceUpdate()
       })
+    } else {
+      console.warn("No searchkit found in props or context for " + this.constructor["name"])
     }
-
-  }
-
-  isInitialLoading(){
-    return this.searcher && this.searcher.initialLoading
-  }
-
-  isLoading(){
-    return this.searcher && this.searcher.loading
-  }
-
-  getError(){
-    return this.searcher && this.searcher.error
   }
 
   componentWillUnmount(){
     if(this.stateListenerUnsubscribe){
 		  this.stateListenerUnsubscribe()
     }
+    if(this.searchkit && this.accessor){
+      this.searchkit.removeAccessor(this.accessor)
+    }
+    this.unmounted = true
 	}
+
+  getResults(){
+    return this.searchkit.results
+  }
+
+  getHits(){
+    return this.searchkit.getHits()
+  }
+
+  getHitsCount(){
+    return this.searchkit.getHitsCount()
+  }
+
+  hasHits(){
+    return this.searchkit.hasHits()
+  }
+
+  hasHitsChanged(){
+    return this.searchkit.hasHitsChanged()
+  }
+
+  getQuery():ImmutableQuery {
+    return this.searchkit.query
+  }
+
+  isInitialLoading(){
+    return this.searchkit.initialLoading
+  }
+
+  isLoading(){
+    return this.searchkit.loading
+  }
+
+  getError(){
+    return this.searchkit.error
+  }
+
+
 }

@@ -37,6 +37,51 @@ new ImmutableQuery().addQuery(BoolMust([
 //filter on either color of red or yellow
 new ImmutableQuery().addFilter("color", BoolShould([
     Term("color", "red"),
-    Term("color", "yellow"),
+    Term("color", "yellow")
 ]))
+```
+* **`.addAnonymousFilter(key, boolObject)`**
+```js
+//filter on either color of red or yellow
+new ImmutableQuery().addAnonymousFilter(BoolShould([
+    Term("color", "red"),
+    Term("color", "yellow")
+]))
+```
+
+* **`.setSize(size)`**
+```js
+new ImmutableQuery().setSize(10)
+```
+
+* **`.getSize()`**
+```js
+query.getSize()
+```
+
+* **`.setFrom(from)`**
+```js
+new ImmutableQuery().setFrom(100)
+```
+
+* **`.getFrom()`**
+```js
+query.getFrom()
+```
+
+* **`.getPage()`**
+```js
+query.getPage()
+```
+
+* **`.setSort(sortOb)`**
+```js
+new ImmutableQuery().setSort([  
+  {"price" : {"order" : "asc"}}  
+])
+```
+
+* **`.setSource(sourceFilter)`**
+```js
+new ImmutableQuery().setSource(["title", "thumbnail"])    
 ```

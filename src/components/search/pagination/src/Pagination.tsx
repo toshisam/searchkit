@@ -1,90 +1,147 @@
 import * as React from "react";
-import * as _ from "lodash";
-import "../styles/index.scss";
 
 import {
-	SearchkitComponent,
-	PaginationAccessor,
-	FastClick
+  SearchkitComponent,
+  PaginationAccessor,
+  FastClick,
+  SearchkitComponentProps,
+  PureRender,
+  RenderComponentType,
+  RenderComponentPropType,
+  renderComponent
 } from "../../../../core"
 
-export interface IPagination {
-	mod?:string
+import {
+  Toggle, ListProps, Select
+} from "../../../ui"
+
+const defaults = require("lodash/defaults")
+const get = require("lodash/get")
+const assign = require("lodash/assign")
+const map = require("lodash/map")
+const compact = require("lodash/compact")
+const isNaN = require("lodash/isNaN")
+const bem = require("bem-cn")
+
+import { Paginator } from "./PaginationUtils"
+
+export interface PaginationProps extends SearchkitComponentProps {
+  listComponent?: any
+  pageScope?: number // Number of page to show before/after the current number
+  showNumbers?: boolean
+  showText?:boolean
+  showLast?:boolean
 }
 
-export enum DIRECTION {
-	NEXT,
-	PREVIOUS
-}
+export class Pagination extends SearchkitComponent<PaginationProps, any> {
+  accessor:PaginationAccessor
 
-export class Pagination extends SearchkitComponent<IPagination, any> {
-	accessor:PaginationAccessor
+  static translations:any = {
+    "pagination.previous":"Previous",
+    "pagination.next":"Next"
+  }
+  translations = Pagination.translations
 
-	defineAccessor() {
-    return new PaginationAccessor("p")
-	}
+  static propTypes = defaults({
+    translations:SearchkitComponent.translationsPropType(
+      Pagination.translations
+    ),
+    listComponent: RenderComponentPropType,
+    pageScope: React.PropTypes.number,
+    showNumbers:React.PropTypes.bool,
+    showText:React.PropTypes.bool,
+    showLast:React.PropTypes.bool,
+  }, SearchkitComponent.propTypes)
 
-	defineBEMBlocks() {
-		let block = (this.props.mod || "pagination-navigation")
-		return {
-			container: block,
-			option: `${block}-item`
-		}
-	}
-
-  hasPagination():boolean {
-		return true
+  static defaultProps = {
+    listComponent: Toggle,
+    pageScope: 3,
+    showNumbers: false,
+    showText: true,
+    showLast: false,
+    mod: "sk-pagination-navigation"
   }
 
-	getCurrentPage():number {
-		return Number(this.accessor.state.getValue()) || 1;
-	}
+  constructor(props){
+    super(props)
 
-	setPage(direction:DIRECTION) {
-		if (this.isDisabled(direction)) { return };
-		let currentPage:number = this.getCurrentPage();
-		if (direction == DIRECTION.PREVIOUS) {
-			this.accessor.state = this.accessor.state.setValue(currentPage-1);
-		} else if (direction == DIRECTION.NEXT) {
-			this.accessor.state = this.accessor.state.setValue(currentPage+1);
-		}
-		this.searchkit.performSearch();
-		window.scrollTo(0,0);
-	}
+    this.setPage = this.setPage.bind(this)
+  }
 
-	isDisabled(direction:DIRECTION):boolean {
-		let currentPage:number = this.getCurrentPage();
-		let totalPages:number = Math.ceil(
-			_.get(this.searcher,"results.hits.total",1)
-			/
-			_.get(this.searcher, "query.query.size", 10)
-		)
-		if (direction == DIRECTION.PREVIOUS && currentPage == 1) { return true; }
-		if (direction == DIRECTION.NEXT && currentPage == totalPages ) { return true; }
-		return false;
-	}
+  defineAccessor() {
+    return new PaginationAccessor("p")
+  }
 
-	paginationElement(direction:DIRECTION, cssClass:string, displayText:string ) {
-		let className = this.bemBlocks.option()
-			.mix(this.bemBlocks.container("item"))
-			.state({
-				disabled:this.isDisabled(direction)
-			})
-    return (
-			<FastClick handler={this.setPage.bind(this,direction)}>
-	      <div className={className}>
-	        <div className={this.bemBlocks.option("text")}>{displayText}</div>
-	      </div>
-			</FastClick>
-		)
-	}
+  getCurrentPage():number {
+    return Number(this.accessor.state.getValue()) || 1;
+  }
+
+  getTotalPages():number {
+    return Math.ceil(
+      get(this.getResults(), ".hits.total", 1)
+      /
+      get(this.getQuery(), "query.size", 10)
+    );
+  }
+
+  isDisabled(pageNumber: number): boolean {
+    return isNaN(pageNumber) || (pageNumber < 1) || (pageNumber > this.getTotalPages());
+  }
+
+  normalizePage(page: (number | string)):number {
+    if (page === 'previous') return this.getCurrentPage() - 1;
+    else if (page === 'next') return this.getCurrentPage() + 1;
+    else return +page
+  }
+
+  setPage(page:(number|string)) {
+    const pageNumber:number = this.normalizePage(page)
+    if (this.isDisabled(pageNumber)) { return };
+    if (pageNumber == this.getCurrentPage()) {
+      return; // Same page, no need to rerun query
+    }
+    this.accessor.state = this.accessor.state.setValue(pageNumber);
+    this.searchkit.performSearch();
+  }
+
+  getPages() {
+    const {
+      showNumbers, pageScope, showText
+    } = this.props
+    const currentPage = this.getCurrentPage()
+    const totalPages = this.getTotalPages()
+
+    const builder =  Paginator.build({
+      showNumbers, showFirst: true,
+      showPrevious: showText, showNext: showText, showEllipsis: showText
+    })
+    return builder(currentPage, totalPages, this.translate, pageScope)
+  }
 
   render() {
-    return (
-      <div className={this.bemBlocks.container()}>
-					{this.paginationElement(DIRECTION.PREVIOUS, "prev", "Previous")}
-					{this.paginationElement(DIRECTION.NEXT, "next", "Next")}
-      </div>
-    )
+    if (!this.hasHits()) return null;
+    const className = bem(this.props.mod).state({numbered:this.props.showNumbers})
+
+    const view = renderComponent(this.props.listComponent, {
+      items: this.getPages(),
+      selectedItems: [this.getCurrentPage()],
+      toggleItem:this.setPage,
+      setItems:(items) => {
+        if (items && items.length > 0) this.setPage(items[0])
+      },
+      disabled: this.getTotalPages() <= 1
+    })
+
+    return <div className={className}>{view}</div>
+
   }
+}
+
+export class PaginationSelect extends Pagination {
+    static defaultProps = defaults({
+        listComponent: Select,
+        mod: 'sk-pagination-select',
+        showNumbers: true,
+        showText: false
+    }, Pagination.defaultProps)
 }

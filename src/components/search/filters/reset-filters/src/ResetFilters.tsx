@@ -1,56 +1,96 @@
 import * as React from "react";
-import * as _ from "lodash";
-import "../styles/index.scss";
 
 import {
-	Searcher,
 	SearchkitManager,
 	SearchkitComponent,
 	FacetAccessor,
-	FastClick
+	FastClick,
+	SearchkitComponentProps,
+	ReactComponentType,
+	PureRender,
+	ResetSearchOptions,
+	ResetSearchAccessor
 } from "../../../../../core"
+const defaults = require("lodash/defaults")
 
-export interface IResetFilters {
-	mod?:string
+
+export interface ResetFiltersDisplayProps {
+	bemBlock:any,
+	hasFilters:boolean,
+	resetFilters:Function,
+	clearAllLabel:string,
+	translate:Function
 }
 
-export class ResetFilters extends SearchkitComponent<IResetFilters, any> {
+@PureRender
+export class ResetFiltersDisplay extends React.Component<ResetFiltersDisplayProps, any>{
+	render(){
+		const {bemBlock, hasFilters, translate, resetFilters, clearAllLabel} = this.props
+		return (
+			<div>
+				<FastClick handler={resetFilters}>
+					<div className={bemBlock().state({disabled:!hasFilters})}>
+						<div className={bemBlock("reset")}>{clearAllLabel}</div>
+					</div>
+				</FastClick>
+			</div>
+		)
+	}
+}
+
+export interface ResetFiltersProps extends SearchkitComponentProps {
+	component?:ReactComponentType<ResetFiltersDisplayProps>,
+	options?:ResetSearchOptions
+}
+
+export class ResetFilters extends SearchkitComponent<ResetFiltersProps, any> {
+
+	static translations:any = {
+		"reset.clear_all":"Clear all filters"
+	}
+	translations = ResetFilters.translations
+	accessor:ResetSearchAccessor
+
+	static propTypes = defaults({
+		translations:SearchkitComponent.translationsPropType(
+			ResetFilters.translations
+		),
+		component:React.PropTypes.func,
+		options:React.PropTypes.object
+	}, SearchkitComponent.propTypes)
+
+	static defaultProps = {
+		component:ResetFiltersDisplay
+	}
+
+	constructor(props){
+		super(props)
+		this.resetFilters = this.resetFilters.bind(this)
+	}
 
 	defineBEMBlocks() {
 		return {
-			container: (this.props.mod || "reset-filters")
+			container: (this.props.mod || "sk-reset-filters")
 		}
 	}
 
-  hasFilters():boolean {
-    return this.searcher.hasFiltersOrQuery()
-  }
+	defineAccessor(){
+		return new ResetSearchAccessor(this.props.options)
+	}
 
 	resetFilters() {
-		this.searchkit.resetState()
+		this.accessor.performReset()
 		this.searchkit.performSearch()
 	}
 
-	renderResetButton() {
-
-		var block = this.bemBlocks.container
-
-		return (
-			<div className={block("reset")}>clear all filters</div>
-		)
-	}
-
   render() {
-		var block = this.bemBlocks.container
-
-    return (
-    <div>
-			<FastClick handler={this.resetFilters.bind(this)}>
-				<div className={block().state({disabled:!this.hasFilters()})}>
-					{this.renderResetButton()}
-				</div>
-			</FastClick>
-		</div>
-    )
+		const props:ResetFiltersDisplayProps = {
+			bemBlock:this.bemBlocks.container,
+			resetFilters:this.resetFilters,
+			hasFilters:this.accessor.canReset(),
+			translate:this.translate,
+			clearAllLabel: this.translate("reset.clear_all")
+		}
+		return React.createElement(this.props.component, props)
   }
 }

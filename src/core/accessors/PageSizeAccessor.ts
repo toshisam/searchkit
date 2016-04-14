@@ -1,17 +1,25 @@
+import {StatefulAccessor} from "./StatefulAccessor";
 import {ValueState} from "../state"
-import {Accessor} from "./Accessor"
-import * as _ from "lodash"
 
-export class PageSizeAccessor extends Accessor<ValueState> {
-
-  size:number
+export class PageSizeAccessor extends StatefulAccessor<ValueState> {
   state = new ValueState()
-  constructor(key, size){
-    super(key)
-    this.size = size
+  constructor(public defaultSize:number){
+    super("size")
   }
 
-  buildOwnQuery(query){
-    return query.setSize(this.size)
+  setSize(size){
+    if(this.defaultSize == size){
+      this.state = this.state.clear()
+    } else {
+      this.state = this.state.setValue(size)
+    }
+  }
+
+  getSize(){
+    return Number(this.state.getValue() || this.defaultSize)
+  }
+
+  buildSharedQuery(query){
+    return query.setSize(this.getSize())
   }
 }

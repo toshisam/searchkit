@@ -1,67 +1,149 @@
-import * as _ from "lodash";
 import * as React from "react";
-import "../styles/index.scss";
 
 import {
 	SearchkitComponent,
-	PageSizeAccessor
+	PageSizeAccessor,
+	ImmutableQuery,
+	HighlightAccessor,
+	SearchkitComponentProps,
+	ReactComponentType,
+	PureRender,
+	SourceFilterType,
+	SourceFilterAccessor,
+	HitsAccessor,
+	RenderComponentType,
+	RenderComponentPropType,
+	renderComponent,
+	block
 } from "../../../../core"
 
-export interface IHits {
-	hitsPerPage: number
-	mod?:string
+const map = require("lodash/map")
+const defaults = require("lodash/defaults")
+
+
+
+export interface HitItemProps {
+	key:string,
+	bemBlocks?:any,
+	result:any
 }
 
-export class Hits extends SearchkitComponent<IHits, any> {
+@PureRender
+export class HitItem extends React.Component<HitItemProps, any> {
 
-	defineAccessor(){
-		return new PageSizeAccessor("s", this.props.hitsPerPage)
-	}
-
-	defineBEMBlocks() {
-		let block = (this.props.mod || "hits")
-		return {
-			container: block,
-			item: `${block}-hit`
-		}
-	}
-
-	renderResult(result:any) {
+	render(){
 		return (
-			<div className={this.bemBlocks.item().mix(this.bemBlocks.container("item"))} key={result._id}>
+			<div data-qa="hit"
+				className={this.props.bemBlocks.item().mix(this.props.bemBlocks.container("item"))}>
+				{this.props.result._id}
 			</div>
 		)
 	}
+}
 
-	renderInitialView() {
-		return (
-			<div className={this.bemBlocks.container("initial-loading")}></div>
-		)
+export interface HitsListProps{
+	mod?:string,
+	className?:string,
+	itemComponent?:RenderComponentType<HitItemProps>,
+	hits:Array<Object>
+}
+
+@PureRender
+export class HitsList extends React.Component<HitsListProps, any>{
+
+	static defaultProps={
+		mod:"sk-hits",
+		itemComponent:HitItem
 	}
 
-	renderNoResults() {
+	static propTypes = {
+		mod:React.PropTypes.string,
+		className:React.PropTypes.string,
+		itemComponent:RenderComponentPropType,
+		hits:React.PropTypes.array
+	}
+
+	render(){
+		const {hits, mod, className, itemComponent} = this.props
+		const bemBlocks = {
+			container: block(mod),
+			item: block(`${mod}-hit`)
+		}
 		return (
-			<div className={this.bemBlocks.container("no-results")}>No results</div>
+			<div data-qa="hits" className={bemBlocks.container().mix(className)}>
+				{map(hits, (result, index)=> {
+					return renderComponent(itemComponent, {
+						key:result._id, result, bemBlocks, index
+					})
+				})}
+			</div>
 		)
+	}
+}
+
+export interface HitsProps extends SearchkitComponentProps{
+	hitsPerPage: number
+	highlightFields?:Array<string>
+	sourceFilter?:SourceFilterType
+	itemComponent?:ReactComponentType<HitItemProps>
+	listComponent?:ReactComponentType<HitsListProps>
+	scrollTo?: boolean|string
+}
+
+
+export class Hits extends SearchkitComponent<HitsProps, any> {
+	hitsAccessor:HitsAccessor
+
+	static propTypes = defaults({
+		hitsPerPage:React.PropTypes.number.isRequired,
+		highlightFields:React.PropTypes.arrayOf(
+			React.PropTypes.string
+		),
+		sourceFilterType:React.PropTypes.oneOf([
+			React.PropTypes.string,
+			React.PropTypes.arrayOf(React.PropTypes.string),
+			React.PropTypes.bool
+		]),
+		itemComponent:RenderComponentPropType,
+		listComponent:RenderComponentPropType
+	}, SearchkitComponent.propTypes)
+
+	static defaultProps = {
+		listComponent:HitsList,
+		scrollTo: "body"
+	}
+
+	componentWillMount() {
+		super.componentWillMount()
+		if(this.props.highlightFields) {
+			this.searchkit.addAccessor(
+				new HighlightAccessor(this.props.highlightFields))
+		}
+		if(this.props.sourceFilter){
+			this.searchkit.addAccessor(
+				new SourceFilterAccessor(this.props.sourceFilter)
+			)
+		}
+		this.hitsAccessor = new HitsAccessor({ scrollTo:this.props.scrollTo })
+		this.searchkit.addAccessor(this.hitsAccessor)
+	}
+
+	defineAccessor(){
+		return new PageSizeAccessor(this.props.hitsPerPage)
 	}
 
 	render() {
-		let hits:{}[] = _.get(this.searcher, "results.hits.hits", [])
-		let hasHits = _.size(hits) > 0
-		let results = null
+		let hits:Array<Object> = this.getHits()
+		let hasHits = hits.length > 0
 
-		if (this.isInitialLoading()) {			
-			results = this.renderInitialView()
-		} else if (!hasHits) {
-			results = this.renderNoResults()
-		} else {
-			results = _.map(hits, this.renderResult.bind(this))
+		if (!this.isInitialLoading() && hasHits) {
+			const {listComponent, mod, className, itemComponent} = this.props
+			return renderComponent(listComponent, {
+				hits, mod, className, itemComponent
+			})
 		}
 
-		return (
-			<div className={this.bemBlocks.container()}>
-				{results}
-      </div>
-		);
+		return null
+
 	}
 }

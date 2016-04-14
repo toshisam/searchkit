@@ -1,25 +1,66 @@
 import {ValueState} from "../state"
-import {Accessor} from "./Accessor"
-import * as _ from "lodash"
+import {StatefulAccessor} from "./StatefulAccessor";
+import {Utils} from "../support"
+const find = require("lodash/find")
+const head = require("lodash/head")
+const map = require("lodash/map")
+const compact = require("lodash/map")
+
+export interface SortingField {
+  field:string
+  options:Object
+}
+
+export interface SortingOption {
+  label:string, field?:string,
+  order?:string, defaultOption?:boolean,
+  key?:string, fields?: Array<SortingField>
+}
 
 export interface SortingOptions {
-  options:[{label:string, field:string, order:string}]
-  mod?:string
+  options:Array<SortingOption>
 }
-export class SortingAccessor extends Accessor<ValueState> {
+
+export class SortingAccessor extends StatefulAccessor<ValueState> {
 
   state = new ValueState()
   options:SortingOptions
 
   constructor(key, options:SortingOptions){
     super(key)
-    this.options = options;
+    this.options = options
+    this.options.options = Utils.computeOptionKeys(
+      this.options.options, ["field", "order"], "none"
+    )
+  }
+
+  getSelectedOption(){
+    let options = this.options.options
+    return  find(options, {key:this.state.getValue()}) ||
+            find(options, {defaultOption:true}) ||
+            head(options)
+  }
+
+  getSortQuery(sortOption){
+    if (sortOption.fields) {
+      return map(sortOption.fields, (field) => {
+        return { [field.field]: field.options || {} }
+      })
+    } else if(sortOption.field && sortOption.order) {
+      return [{[sortOption.field]: sortOption.order}]
+    } else if (sortOption.field) {
+      return [sortOption.field]
+    }
+    return null
   }
 
   buildOwnQuery(query){
-    var selectedSortOption:any = _.findWhere(this.options.options, {label:this.state.getValue()})
+    let selectedSortOption = this.getSelectedOption()
     if (selectedSortOption) {
-      query = query.setSort([{[selectedSortOption.field]: selectedSortOption.order}])
+      let sortQuery = this.getSortQuery(selectedSortOption)
+      if(sortQuery){
+        query = query.setSort(sortQuery)
+      }
     }
     return query
   }

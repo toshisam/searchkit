@@ -1,55 +1,65 @@
-import {State} from "../state"
 import {ImmutableQuery} from "../query/ImmutableQuery";
-import {Searcher} from "../Searcher"
+import {SearchkitManager} from "../SearchkitManager";
+import {Utils} from "../support"
+const get = require("lodash/get")
 
-export class Accessor<T extends State<any>> {
-  key:string
-  urlKey:string
-  state:T
-  resultsState:T
-  searcher:Searcher
-  constructor(key, urlString?){
-    this.key = key
-    this.urlKey = urlString || key && key.replace(/\./g, "_")
+export class Accessor {
+  searchkit:SearchkitManager
+  uuid:string
+  results:any
+  active:boolean
+  translations:Object
+  refCount:number
+  constructor(){
+    this.uuid = Utils.guid()
+    this.active = true
+    this.translations = {}
+    this.refCount = 0
   }
 
-  setSearcher(searcher){
-    this.searcher = searcher
-    this.setResultsState()
+  incrementRef(){
+    this.refCount++
   }
 
-  translate(key){
-    return this.searcher.translate(key)
+  decrementRef(){
+    this.refCount--
   }
 
-  onStateChange(oldState){
-
+  setActive(active:boolean){
+    this.active = active
+    return this
   }
 
-  fromQueryObject(ob){
-    let value = ob[this.urlKey]
-    this.state = this.state.setValue(value)
+  setSearchkitManager(searchkit){
+    this.searchkit = searchkit
   }
 
-  getQueryObject(){
-    let val = this.state.getValue()    
-    return (val) ? {
-      [this.urlKey]:this.state.getValue()
-    } : {}
+
+  translate(key, interpolations?){
+    let translation = (
+      (this.searchkit && this.searchkit.translate(key)) ||
+       this.translations[key] ||
+       key)
+    return Utils.translate(translation, interpolations)
   }
 
   getResults(){
-    return this.searcher.results
+    return this.results
   }
 
-  setResultsState(){
-    this.resultsState = this.state
+  setResults(results){
+    this.results = results
   }
 
-  resetState(){
-    this.state = this.state.clear()
+  getAggregations(path, defaultValue){
+    const results = this.getResults()
+    const getPath = ['aggregations',...path]
+    return get(results, getPath, defaultValue)
   }
 
+  beforeBuildQuery(){
+
+  }
   buildSharedQuery(query:ImmutableQuery){
     return query
   }

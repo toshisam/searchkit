@@ -1,49 +1,88 @@
 import {State, LevelState} from "../state"
-import {Accessor} from "./Accessor"
+import {FilterBasedAccessor} from "./FilterBasedAccessor";
 import {
-  Term, Terms, Aggs,
+  TermQuery, TermsBucket, FilterBucket,
   BoolShould, BoolMust
-} from "../query/QueryBuilders";
-import * as _ from "lodash";
+} from "../query/";
+const map = require("lodash/map")
+const each = require("lodash/each")
+const compact = require("lodash/compact")
+const take = require("lodash/take")
+const omitBy = require("lodash/omitBy")
+const isUndefined = require("lodash/isUndefined")
 
+export interface HierarchicalFacetAccessorOptions{
+  fields:Array<string>
+  size:number
+  id:string
+  title:string
+  orderKey?:string
+  orderDirection?:string
+}
 
-export class HierarchicalFacetAccessor extends Accessor<LevelState> {
+export class HierarchicalFacetAccessor extends FilterBasedAccessor<LevelState> {
 
   state = new LevelState()
   options:any
-  constructor(key, options:any){
+  uuids:Array<String>
+
+  constructor(key, options:HierarchicalFacetAccessorOptions){
     super(key)
     this.options = options
+    this.computeUuids()
+  }
+
+  computeUuids(){
+    this.uuids = map(
+      this.options.fields, field => this.uuid + field)
+  }
+
+  onResetFilters(){
+    this.resetState()
   }
 
   getBuckets(level){
-    const results = this.getResults()
     var field = this.options.fields[level]
-    const path = ['aggregations',field, field,'buckets']
-    return _.get(results, path, [])
+    return this.getAggregations([this.options.id, field, field, "buckets"], [])
+  }
+
+
+  getOrder(){
+    if(this.options.orderKey){
+      let orderDirection = this.options.orderDirection || "asc"
+      return {[this.options.orderKey]:orderDirection}
+    }
   }
 
   buildSharedQuery(query) {
 
-    _.each(this.options.fields, (field:string, i:number) => {
+    each(this.options.fields, (field:string, i:number) => {
       var filters = this.state.getLevel(i);
       var parentFilter = this.state.getLevel(i-1);
-
-      var filterTerms = _.map(filters, (filter:any, idx)=> {
-        return Term(field, filter, {
-          $name:this.translate(parentFilter[0]) || this.options.title || this.translate(field),
-          $value:this.translate(filter),
-          $id:this.options.id,
-          $remove:()=> {
-            this.state = this.state.remove(i, filter)
-          },
-          $disabled: this.state.levelHasFilters(i+1)
-        })
-      });
+      var isLeaf = !this.state.levelHasFilters(i+1)
+      var filterTerms = map(filters, TermQuery.bind(null, field))
 
       if(filterTerms.length > 0){
-        query = query.addFilter(field, BoolShould(filterTerms))
+        query = query.addFilter(
+          this.uuids[i],
+          (filterTerms.length  > 1 ) ?
+          BoolShould(filterTerms) : filterTerms[0])
+        }
+
+      if(isLeaf){
+        var selectedFilters = map(filters, (filter)=> {
+          return {
+            id:this.options.id,
+            name:this.translate(parentFilter[0]) || this.options.title || this.translate(field),
+            value:this.translate(filter),
+            remove:()=> {
+              this.state = this.state.remove(i, filter)
+            }
+          }
+        })
+        query = query.addSelectedFilters(selectedFilters)
       }
+
     })
 
     return query
@@ -52,18 +91,23 @@ export class HierarchicalFacetAccessor extends Accessor<LevelState> {
   buildOwnQuery(query){
     var filters = this.state.getValue()
     var field = this.options.fields[0]
-    var aggs = {};
-
-    _.each(this.options.fields, (field:string, i:number) => {
-
+    let lvlAggs = compact(map(this.options.fields, (field:string, i:number) => {
       if (this.state.levelHasFilters(i-1) || i == 0) {
-        _.extend(aggs, Aggs(
+        return FilterBucket(
           field,
-          query.getFilters(_.slice(this.options.fields,i)),
-          Terms(field, {size:this.options.size})
-        ))
+          query.getFiltersWithKeys(take(this.uuids,i)),
+          TermsBucket(field, field, omitBy({
+            size:this.options.size, order:this.getOrder()
+          }, isUndefined))
+        )
       }
-    });
+    }));
+
+    var aggs = FilterBucket(
+      this.options.id,
+      query.getFiltersWithoutKeys(this.uuids),
+      ...lvlAggs
+    )
 
     return query.setAggs(aggs)
   }

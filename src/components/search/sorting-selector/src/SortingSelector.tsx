@@ -1,52 +1,77 @@
 import * as React from "react";
-import * as _ from "lodash";
-import "../styles/index.scss";
 
 import {
 	SearchkitComponent,
 	SortingAccessor,
 	FastClick,
-	SortingOptions
+	SortingOptions,
+	SearchkitComponentProps,
+	SortingOption,
+	renderComponent,
+	RenderComponentType,
+	RenderComponentPropType
 } from "../../../../core"
 
+import {
+	Select, ListProps
+} from "../../../ui"
 
+const defaults = require("lodash/defaults")
+const map = require("lodash/map")
 
-export class SortingSelector extends SearchkitComponent<SortingOptions, any> {
-	accessor:SortingAccessor
+export interface SortingProps extends SearchkitComponentProps {
+  options:Array<SortingOption>
+  listComponent?: RenderComponentType<ListProps>
+}
 
-	defineAccessor() {
-    return new SortingAccessor("sort", this.props)
-	}
+export class SortingSelector extends SearchkitComponent<SortingProps, any> {
+  accessor:SortingAccessor
 
-	defineBEMBlocks() {
-		return {
-			container: (this.props.mod || "sorting-selector")
-		}
-	}
+  static propTypes = defaults({
+    listComponent: RenderComponentPropType,
+    options:React.PropTypes.arrayOf(
+      React.PropTypes.shape({
+        label:React.PropTypes.string.isRequired,
+        field:React.PropTypes.string,
+        order:React.PropTypes.string,
+        defaultOption:React.PropTypes.bool
+      })
+    )
+  }, SearchkitComponent.propTypes)
 
-	renderOption(option) {
-		return (
-			<option key={option.label} value={option.label}>{option.label}</option>
-		)
-	}
+  static defaultProps = {
+    listComponent: Select
+  }
 
-	updateSorting(e) {
-		let val:string = e.target.value;
-		this.accessor.state = this.accessor.state.setValue(val);
-		this.searchkit.performSearch();
-	}
+  defineAccessor() {
+    return new SortingAccessor("sort", {options:this.props.options})
+  }
 
-	getSelectedValue():string {
-		return `${this.accessor.state.getValue()}`
+  toggleItem(key) {
+    this.accessor.state = this.accessor.state.setValue(key);
+    this.searchkit.performSearch();
+  }
+
+	setItems(keys){
+		this.toggleItem(keys[0])
 	}
 
   render() {
-    return (
-      <div className={this.bemBlocks.container()}>
-      	<select onChange={this.updateSorting.bind(this)} value={this.getSelectedValue()}>
-					{_.map(this.props.options, this.renderOption.bind(this))}
-				</select>
-      </div>
-    )
+    const { listComponent } = this.props
+		const options = this.accessor.options.options		
+    const selected = [this.accessor.getSelectedOption().key]
+    const disabled = !this.hasHits()
+
+    return renderComponent(listComponent, {
+			mod:this.props.mod,
+			className:this.props.className,
+      items: options,
+      selectedItems: selected,
+      setItems: this.setItems.bind(this),
+      toggleItem: this.toggleItem.bind(this),
+      disabled: disabled,
+      urlBuilder: (item) => this.accessor.urlWithState(item.key),
+			translate:this.translate
+    })
   }
 }

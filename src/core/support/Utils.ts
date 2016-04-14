@@ -1,14 +1,59 @@
-import * as _ from "lodash"
+const reduce = require("lodash/reduce")
+const map = require("lodash/map")
+const reject = require("lodash/reject")
+const isUndefined = require("lodash/isUndefined")
+
 export class Utils {
-  static guid(){
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
-      return v.toString(16);
-    });
+  static guidCounter = 0
+
+  static guid(prefix=""){
+    let id = ++Utils.guidCounter
+    return prefix.toString() + id
   }
 
   static collapse(collection, seed){
     const reducer = (current, fn)=> fn(current)
-    return _.reduce(collection, reducer, seed)
+    return reduce(collection, reducer, seed)
+  }
+
+  static instanceOf(klass){
+    return (val)=> val instanceof klass
+  }
+
+  static interpolate(str, interpolations){
+    return str.replace(
+  		/{([^{}]*)}/g,
+  		(a, b) => {
+  			var r = interpolations[b];
+  			return typeof r === 'string' || typeof r === 'number' ? r : a;
+  		}
+    )
+  }
+
+  static translate(key, interpolations?){
+    if(interpolations){
+      return Utils.interpolate(key, interpolations)
+    } else {
+      return key
+    }
+  }
+
+  static computeOptionKeys(options, fields, defaultKey){
+    return map(options, (option)=> {
+      return Utils.generateKeyFromFields(option, fields, defaultKey)
+    })
+  }
+
+  static generateKeyFromFields(ob, fields, defaultKey){
+    if(ob.key){
+      return ob
+    }
+    let fieldValues = reject(map(fields, (field)=> ob[field]), isUndefined)
+    if(fieldValues.length > 0){
+      ob.key = fieldValues.join("_")
+    } else {
+      ob.key = defaultKey
+    }
+    return ob
   }
 }

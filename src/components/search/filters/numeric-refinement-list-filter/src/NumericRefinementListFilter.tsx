@@ -1,78 +1,114 @@
 import * as React from "react";
-import * as _ from "lodash";
-import "../styles/index.scss";
 
 import {
-	Searcher,
 	SearchkitManager,
 	SearchkitComponent,
 	NumericOptionsAccessor,
-	NumericOptions,
-	FastClick
+	SearchkitComponentProps,
+	RangeOption,
+	RenderComponentType,
+	RenderComponentPropType,
+	renderComponent
 } from "../../../../../core"
 
+import {
+	ListProps, ItemProps, ItemList, Panel
+} from "../../../../ui"
 
-export class NumericRefinementListFilter extends SearchkitComponent<NumericOptions, any> {
-	accessor:NumericOptionsAccessor
+const defaults = require("lodash/defaults")
+const map = require("lodash/map")
 
-	shouldCreateNewSearcher() {
-		return true;
+export interface NumericRefinementListFilterProps extends SearchkitComponentProps {
+  field:string
+  title:string
+  options:Array<RangeOption>
+  id:string
+  multiselect?: boolean
+  showCount?: boolean
+  listComponent?: RenderComponentType<ListProps>
+  itemComponent?: RenderComponentType<ItemProps>
+  containerComponent?: RenderComponentType<any>
+}
+
+export class NumericRefinementListFilter extends SearchkitComponent<NumericRefinementListFilterProps, any> {
+  accessor:NumericOptionsAccessor
+
+  static propTypes = defaults({
+    containerComponent: RenderComponentPropType,
+    listComponent: RenderComponentPropType,
+    itemComponent: RenderComponentPropType,
+    field:React.PropTypes.string.isRequired,
+    title:React.PropTypes.string.isRequired,
+    id:React.PropTypes.string.isRequired,
+    multiselect: React.PropTypes.bool,
+    showCount: React.PropTypes.bool,
+    options:React.PropTypes.arrayOf(
+      React.PropTypes.shape({
+        title:React.PropTypes.string.isRequired,
+        from:React.PropTypes.number,
+        to:React.PropTypes.number,
+        key:React.PropTypes.string
+      })
+    )
+  }, SearchkitComponent.propTypes)
+
+  static defaultProps = {
+    listComponent: ItemList,
+    containerComponent: Panel,
+    multiselect: false,
+    showCount: true
+  }
+
+	constructor(props){
+		super(props)
+		this.toggleItem = this.toggleItem.bind(this)
+		this.setItems = this.setItems.bind(this)
 	}
 
-	defineAccessor() {
-		return new NumericOptionsAccessor(
-			this.props.id,
-			{id:this.props.id, field:this.props.field, options:this.props.options, title:this.props.title}
-		)
+  defineAccessor() {
+    const {id, field, options, title, multiselect} = this.props
+    return new NumericOptionsAccessor(id, {
+      id, field, options, title, multiselect
+    })
+  }
+
+  toggleItem(key) {
+    this.accessor.toggleOption(key)
+  }
+
+	setItems(keys){
+		this.accessor.setOptions(keys)
 	}
 
-	defineBEMBlocks() {
-		var blockName = this.props.mod || "numeric-refinement-list"
-		return {
-			container: blockName,
-			option: `${blockName}-option`
-		}
-	}
+  getSelectedItems() {
+    const selectedOptions = this.accessor.getSelectedOrDefaultOptions() || []
+    return map(selectedOptions, "title")
+  }
 
-	addFilter(option) {
-		this.accessor.state = this.accessor.state.toggle(option.key)
-		this.searchkit.performSearch()
-	}
+  hasOptions(): boolean {
+    return this.accessor.getBuckets().length != 0
+  }
 
-	isSelected(option) {
-		return this.accessor.state.getValue() == option.key;
-	}
+  render() {
+    const {
+			listComponent, containerComponent, itemComponent,
+			showCount, title, id, mod, className
+		} = this.props
 
-	renderOption(option) {
-
-		let block = this.bemBlocks.option
-		let className = block()
-			.mix(this.bemBlocks.container("item"))
-			.state({
-				selected:this.isSelected(option)
-			})
-
-		return (
-			<FastClick handler={this.addFilter.bind(this, option)} key={option.key}>
-				<div className={className}>
-					<div className={block("text")}>{this.translate(option.key)}</div>
-					<div className={block("count")}>{option.doc_count}</div>
-				</div>
-			</FastClick>
-		)
-	}
-
-	render() {
-		var block = this.bemBlocks.container
-		var className = block().mix(`filter--${this.props.id}`)
-
-		return (
-			<div className={className}>
-				<div className={block("header")}>{this.props.title}</div>
-				<div className={block("options")}>
-				{_.map(this.accessor.getBuckets(), this.renderOption.bind(this))}
-				</div>
-			</div>
-		);
-	}
+  	return renderComponent(containerComponent, {
+      title,
+      className: id ? `filter--${id}` : undefined,
+      disabled: !this.hasOptions()
+    },
+    renderComponent(listComponent, {
+			mod, className,
+      items: this.accessor.getBuckets(),
+			itemComponent,
+      selectedItems: this.getSelectedItems(),
+      toggleItem: this.toggleItem,
+			setItems:this.setItems,
+      showCount,
+			translate:this.translate
+    }));
+  }
 }
